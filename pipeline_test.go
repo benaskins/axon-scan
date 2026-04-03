@@ -128,6 +128,55 @@ func TestPipeline_ParallelRunsConcurrently(t *testing.T) {
 	}
 }
 
+func TestPipelineResult_Deduplicate(t *testing.T) {
+	// Layer A: one duplicate finding (warning) and one unique finding.
+	layerA := scan.LayerResult{
+		Name: "layer-a",
+		Pass: true,
+		Findings: []scan.Finding{
+			{Severity: scan.SeverityWarning, File: "main.go", Line: 10, Description: "warning from A"},
+			{Severity: scan.SeverityInfo, File: "main.go", Line: 20, Description: "unique to A"},
+		},
+	}
+	// Layer B: same file+line as the first finding in A (higher severity) and
+	// a second finding that is unique.
+	layerB := scan.LayerResult{
+		Name: "layer-b",
+		Pass: true,
+		Findings: []scan.Finding{
+			{Severity: scan.SeverityHigh, File: "main.go", Line: 10, Description: "high from B"},
+			{Severity: scan.SeverityInfo, File: "util.go", Line: 5, Description: "unique to B"},
+		},
+	}
+
+	result := &scan.PipelineResult{
+		LayerResults: []scan.LayerResult{layerA, layerB},
+		Pass:         true,
+	}
+
+	deduped := result.Deduplicate()
+
+	// Total unique file+line pairs: (main.go:10), (main.go:20), (util.go:5) → 3.
+	if len(deduped) != 3 {
+		t.Fatalf("expected 3 deduplicated findings, got %d", len(deduped))
+	}
+
+	// Find the finding for main.go:10 and verify the highest severity is kept.
+	var found *scan.Finding
+	for i := range deduped {
+		if deduped[i].File == "main.go" && deduped[i].Line == 10 {
+			found = &deduped[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("expected finding for main.go:10 in deduplicated results")
+	}
+	if found.Severity != scan.SeverityHigh {
+		t.Errorf("expected highest severity %q for main.go:10, got %q", scan.SeverityHigh, found.Severity)
+	}
+}
+
 func TestPipeline_EmptyLayers(t *testing.T) {
 	p := scan.NewPipeline(nil)
 	result, err := p.Run(context.Background(), t.TempDir())

@@ -84,6 +84,39 @@ func (p *Pipeline) runSequential(ctx context.Context, projectDir string) []Layer
 	return results
 }
 
+// severityRank maps Severity to a numeric rank for comparison (higher = more severe).
+var severityRank = map[Severity]int{
+	SeverityInfo:     0,
+	SeverityWarning:  1,
+	SeverityHigh:     2,
+	SeverityCritical: 3,
+}
+
+// Deduplicate returns a flat slice of findings across all LayerResults with
+// duplicates removed. When two findings share the same File and Line, only the
+// highest-severity one is kept.
+func (r *PipelineResult) Deduplicate() []Finding {
+	type key struct {
+		file string
+		line int
+	}
+	best := make(map[key]Finding)
+	for _, lr := range r.LayerResults {
+		for _, f := range lr.Findings {
+			k := key{file: f.File, line: f.Line}
+			existing, seen := best[k]
+			if !seen || severityRank[f.Severity] > severityRank[existing.Severity] {
+				best[k] = f
+			}
+		}
+	}
+	out := make([]Finding, 0, len(best))
+	for _, f := range best {
+		out = append(out, f)
+	}
+	return out
+}
+
 func (p *Pipeline) runParallel(ctx context.Context, projectDir string) []LayerResult {
 	results := make([]LayerResult, len(p.layers))
 	var wg sync.WaitGroup
