@@ -1,11 +1,10 @@
 build:
-    go build -o bin/axon-scan ./cmd/axon-scan
-
-install: build
-    cp bin/axon-scan ~/.local/bin/axon-scan
+    go build ./...
 
 test:
-    go test ./...
+    go test -race ./...
 
 vet:
     go vet ./...
+
+check: vet test
