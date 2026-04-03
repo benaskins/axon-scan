@@ -1,154 +1,96 @@
-# Toolmaker: Axon Component Builder
-
-You are building an axon component. Axon is a suite of Go libraries for AI-powered services. Each component is a focused, composable module published as its own Go module under `github.com/benaskins/`.
-
-## Identity
-
-- Module path: always `github.com/benaskins/{name}`
-- Every axon module name is exactly four letters: loop, talk, tool, fact, auth, memo, look, task, gate, mind, lens, wire, synd, eval, tape, rule, chat, book, push, face, base, lore, sign, scan, cost
-- Do not change the module path. Do not invent org names.
-
-## Structure
-
-Axon libraries are NOT services. They have no `cmd/` directory, no `main()`, no HTTP server. They are imported by other code.
-
-Typical layout:
-```
-axon-{name}/
-  {package}/         # one or more focused packages
-  {package}_test.go  # tests alongside code
-  go.mod
-  go.sum
-  justfile
-  CLAUDE.md
-  AGENTS.md
-  README.md
-  plans/
-```
-
-Some modules are a single package at the root. Others have sub-packages for distinct concerns (e.g. axon-base has pool/, migration/, repository/, scan/).
-
-## Code Style
-
-- Explicit over implicit. No reflection for struct mapping. No `SELECT *`. No query builders.
-- Interfaces as contracts, not abstractions for their own sake. Only define an interface when there are (or will be) multiple implementations.
-- Error wrapping with context: `fmt.Errorf("operation: %w", err)`.
-- Context propagation: all blocking operations take `context.Context`.
-- No third-party assertion libraries (testify, gomega). Use standard `testing` package.
-- No testcontainers. Integration tests use the workbench Postgres at `localhost:5433` (database `workbench`, user `postgres`). Never port 5432, that is the core database. Skip gracefully if unavailable.
-
-## Dependencies
-
-- Only depend on standard library and the specific external libraries the PRD calls for (e.g. pgx, golang-migrate)
-- Depend on other axon modules only when the PRD requires composition (e.g. axon-cost depends on axon-fact for event emission)
-- Use replace directives in go.mod pointing to `~/dev/lamina/{name}` for local axon dependencies
-- Do not add axon (the HTTP toolkit) as a dependency unless this is a service. Libraries stay independent.
-
-## Testing
-
-- Write tests first (TDD). Every public function has tests.
-- Tests that need external services (Postgres, NATS) skip with `t.Skip()` when the service is unreachable. These are the real tests, not a separate tier.
-- Do not create a separate `integration/` test package. Per-package tests that hit real services are the integration tests.
-- For database libraries, do not mock the database. The SQL running against real Postgres is the test. Mock the `Repository` interface at the application boundary, not inside the library.
-- Use `t.TempDir()` for filesystem tests, never write outside of it.
-- No third-party assertion libraries. Standard `testing` package only.
-
-## Publishing
-
-After build, this module will be:
-1. Pushed to `github.com/benaskins/{name}`
-2. Tagged with a version
-3. Added to the axon catalogue in `luthier/catalogues/axon.yaml`
-4. Available for composition in future scaffolds
-
----
-
-# CLAUDE.md
+# CLAUDE.md — axon-scan
 
 ## What This Is
 
-Initialise the Go module (go mod init). Define all public types in types.go: Severity constants (info/warning/high/critical), Finding struct (Severity, File, Line, Description), LayerResult struct (Name, Pass, Findings, Duration, RawOutput), PipelineResult struct (LayerResults, Pass, StartedAt, FinishedAt). Define the Layer interface (Name() string, Run(ctx context.Context, projectDir string) (*LayerResult, error)). No logic yet — only type declarations. Test: compile the package with `go build ./...`.
+axon-scan is a Go library (`github.com/benaskins/axon-scan`) that orchestrates a multi-layer code quality pipeline: static analysis, security scanning, test execution, and LLM-driven architectural review. It is a library — no `main()`, no CLI entry point, no HTTP server.
 
 ## Module
 
 - Module path: `github.com/benaskins/axon-scan`
-- Project type: library
+- Project type: library (no main package)
+- Go version: 1.26
 
-## Build & Run
+## Build & Test
 
 ```bash
-just build     # builds to bin/axon-scan
-just install   # installs to ~/.local/bin/axon-scan
-just test      # run tests
-just vet       # lint
+just build     # go build ./...
+just test      # go test -race ./...
+just vet       # go vet ./...
+just check     # vet, then test
+```
+
+## Package Layout
+
+```
+axon-scan/
+  types.go           # Severity, Finding, LayerResult, PipelineResult, Layer interface
+  exec.go            # ExecRunner interface + DefaultExecRunner (os/exec)
+  pipeline.go        # Pipeline, PipelineOption (WithParallel, WithLayers), Deduplicate
+  layers/
+    static.go        # StaticAnalysisLayer (go build, go vet, staticcheck)
+    security.go      # SecurityScanLayer (gosec JSON output)
+    test.go          # TestExecutionLayer (go test -race)
+    agent.go         # AgentReviewLayer (axon-loop + report_finding tool)
+  attestation/
+    writer.go        # WriteAttestation → attestation.json + ATTESTATION.md + optional .sig
+  plans/
+    2026-04-03-initial-build.md
 ```
 
 ## Constraints
 
-These constraints are extracted from the PRD. Follow them strictly during implementation.
+Do not violate these without an explicit change request.
 
-- This is a Go library — no main package, no HTTP server, no axon import. Do not scaffold a service or CLI entry point.
-- Only axon-loop, axon-talk, axon-tool, and axon-sign types are permitted as axon dependencies. No other axon modules may be imported.
-- External tools (staticcheck, gosec) are optional. Every layer that shells out to an external tool must degrade gracefully when the tool is not installed — do not fail hard on missing binaries.
-- Tests must not require external tools (go build, go vet, staticcheck, gosec) to be installed. All exec calls must be mockable in tests.
-- Tests must not write files outside t.TempDir(). All file I/O in tests must be scoped to the temp directory provided by the testing framework.
-- Attestation JSON must be self-contained and parseable without importing the axon-scan library (no unexported types, no custom JSON marshallers that require library types).
-- No fix suggestions or auto-remediation logic. The library only reports findings, never modifies source files.
-- No historical tracking of attestations. axon-fact must not be imported. Persistence is the caller's responsibility.
-## Plan
+- **No main package.** This is a library. Never add `cmd/` or `func main()`.
+- **Approved axon dependencies only:** axon-loop, axon-talk (indirect), axon-tool. Do not import axon-fact, axon-memo, axon-base, or any other axon module.
+- **Tests must not require external binaries.** All `exec` calls go through injected `ExecRunner`/`LoopRunner` interfaces. Tests supply stubs — no real `go`, `gosec`, or `staticcheck` invocations.
+- **Tests must not write outside `t.TempDir()`.** All file I/O in tests must be scoped to the temp directory.
+- **No auto-remediation.** axon-scan reports findings only. It must never modify source files.
+- **No axon-fact / no historical tracking.** Attestation persistence is the caller's responsibility.
+- **No third-party assertion libraries.** Standard `testing` package only.
+- **Optional tools degrade gracefully.** `staticcheck` and `gosec` are skipped (not failed) when absent from PATH.
+- **Attestation JSON must be self-contained.** Parseable via `encoding/json` into `map[string]any` without importing axon-scan.
 
-See `plans/` for commit-sized implementation steps.
+## Key Interfaces
 
-## Framework: Axon/Lamina (go 1.26)
+```go
+// Layer — implement to add a new scan layer
+type Layer interface {
+    Name() string
+    Run(ctx context.Context, projectDir string) (*LayerResult, error)
+}
 
-### Components in Use
+// ExecRunner — inject DefaultExecRunner{} in production, stub in tests
+type ExecRunner interface {
+    Run(ctx context.Context, dir string, name string, args ...string) (stdout, stderr []byte, exitCode int, err error)
+}
 
-- **axon-loop**: Agent Review layer (Layer 3) drives an LLM conversation to perform architectural review of source files. axon-loop orchestrates the multi-turn conversation loop required for this.
-- **axon-talk**: Provides the LLM provider adapter required by axon-loop to connect to Anthropic, Ollama, or Cloudflare Workers AI for the agent review layer.
-- **axon-tool**: Defines the structured tool the agent calls to return findings (severity, file, line, description) from the architectural review. Without axon-tool the loop cannot produce structured output.
+// LoopRunner (layers package) — inject DefaultLoopRunner{} in production, stub in tests
+type LoopRunner interface {
+    Run(ctx context.Context, cfg loop.RunConfig) (*loop.Result, error)
+}
+```
 
-### Patterns
+## TDD Practice
 
-- **HTTP service**: axon.ListenAndServe + axon.MustLoadConfig
-- **CLI tool**: main.go with os.Args or flag parsing. No axon import needed.
-- **LLM conversation**: axon-loop + axon-talk + axon-tool (all three required). The loop orchestrates turns, talk connects to the LLM provider, tool defines the structured actions the model can take. Selecting axon-loop without axon-tool means the model has no tools to call and cannot produce structured output.
-- **Async/background work**: axon-task + axon-fact; never block HTTP handlers
-- **Authentication**: axon-auth (WebAuthn/passkeys)
-- **Event audit trail / replay**: axon-fact projectors
-- **Cross-session memory**: axon-memo
-- **Cross-instance fan-out**: axon-nats
-- **Process supervision**: aurelia service YAML
-- **Deterministic logic**: Go code, no LLM needed
-- **Non-deterministic logic**: axon-loop, never raw LLM calls
+For each plan step:
 
-### File Conventions
+1. Write a failing test first.
+2. Make it pass with the minimal implementation.
+3. Clean up without breaking tests.
+4. Run `just test` — all tests must pass before committing.
+5. Stage only files related to the current step (`git status`).
+6. One conventional commit per step (`feat:`, `fix:`, `refactor:`, `docs:`, `infra:`).
 
-- `main.go`: Entry point. HTTP services: imports axon, calls axon.ListenAndServe. CLI tools: parses args, wires deps, runs pipeline.
-- `justfile`: build, install, test targets using just
-- `AGENTS.md`: Architecture, module selections, boundaries, dep graph
-- `CLAUDE.md`: Working instructions for Claude Code
-- `README.md`: What it is, how to run it
-- `plans/YYYY-MM-DD-initial-build.md`: Commit-sized plan steps
+Stop if a step reveals a design question the plan did not anticipate, or tests fail for unrelated reasons.
 
-### Boundary Notes
+## Axon Framework Notes
 
-The boundary between a caller and axon-loop is always non-det.
-The boundary between axon-loop and axon-talk is det (provider selection is deterministic).
-The boundary between axon-tool and its tool implementations depends on what the tools do.
+- **axon-loop**: Orchestrates multi-turn LLM conversation in `AgentReviewLayer`.
+- **axon-talk**: LLM provider adapter — not imported directly; used transitively by axon-loop.
+- **axon-tool**: Defines the `report_finding` tool schema. Required for structured output from the LLM.
 
-
-## Practice
-
-Execute the plan one step at a time. Each step is a TDD cycle that ends with a clean commit.
-
-1. Read the plan. Pick up the next incomplete step.
-2. Write a failing test first, then make it pass, then clean up. Run the full test suite before committing.
-3. Wire new code into the entrypoint immediately. Every step should produce a program that builds, runs, and does something observable end-to-end. Do not defer integration to later steps.
-4. Review your change for reuse, quality, and efficiency before committing.
-5. Run `git status`. Only stage files related to this step.
-6. One commit per plan step. Use conventional commit messages (feat/fix/refactor/test/infra/config prefix).
-7. Move to the next step.
-
-Stop if:
-- A step reveals a design question the plan did not anticipate
-- Tests are failing for reasons unrelated to the current step
+Boundary classification:
+- Caller → AgentReviewLayer: **non-det** (LLM output varies)
+- Caller → all other layers: **det** (deterministic given identical source)
+- axon-loop → axon-talk: **det** (provider wiring is deterministic code)
