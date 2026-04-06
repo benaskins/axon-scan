@@ -1,2 +1,8 @@
+github.com/benaskins/axon-loop v0.7.5 h1:pot9S+6A8cimZDXB9cq+Nu75lWJC5uRO+0l+TNivsQI=
+github.com/benaskins/axon-loop v0.7.5/go.mod h1:MbGzDAme7/T3lDz9Xp63nP1RqNLhD8YyrZTRLc8CPzQ=
+github.com/benaskins/axon-talk v0.9.0 h1:go8ovdLqbBiOL4y08Ycys0LwOT9CngHEWrwI5Snx5h0=
+github.com/benaskins/axon-talk v0.9.0/go.mod h1:5H0cQ2EzeUqYeZlt5Sz0CXmQhBJDg/fp9gdAGiUjXxI=
 github.com/benaskins/axon-tape v0.1.1 h1:ZL/QJ3TQjEtcXtozp0Ww9GbuzOLRsnFIzHjV7vQJzlo=
 github.com/benaskins/axon-tape v0.1.1/go.mod h1:j7B7BlQjvqX+U5djQooLIYRZ0Njvvgj/QQGTkPzm2ag=
+github.com/benaskins/axon-tool v0.3.0 h1:YWdTbcxnE95yjp9i5BI8RyN56fyWAT9Wk57oYflfyxI=
+github.com/benaskins/axon-tool v0.3.0/go.mod h1:LnCeTvAo8vsI+XF4YBIt4YV1Mtpx3WImGurFRs2W0s4=
